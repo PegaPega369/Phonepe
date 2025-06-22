@@ -296,18 +296,19 @@ export const getAuthToken = async (): Promise<string> => {
     console.log('Client ID:', CLIENT_ID);
     console.log('Client Version:', CLIENT_VERSION);
     
+    // Prepare form data as per PhonePe documentation
+    const formData = new URLSearchParams();
+    formData.append('client_id', CLIENT_ID);
+    formData.append('client_version', CLIENT_VERSION);
+    formData.append('client_secret', CLIENT_SECRET);
+    formData.append('grant_type', 'client_credentials');
+    
     const response = await axios.post(
       tokenUrl,
-      null,
+      formData.toString(),
       {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        params: {
-          client_id: CLIENT_ID,
-          client_version: CLIENT_VERSION,
-          client_secret: CLIENT_SECRET,
-          grant_type: 'client_credentials'
         }
       }
     );

@@ -36,6 +36,8 @@ import SIPCalculator from './screens/SIPCalculator';
 import InvestmentDetail from './screens/InvestmentDetails';
 import AccountDetails from './screens/Account/AccountDetails';
 import IdentityVerification from './screens/Account/IdentityVerification';
+import IdentityVerification1 from './screens/Account/IdentityVerification1';
+import PANVerification from './screens/Account/PANVerification';
 import PaymentMethods from './screens/Account/PaymentMethods';
 import SetupAutopay from './screens/Account/SetupAutopay';
 import ManageAutopay from './screens/Account/ManageAutopay';
@@ -146,6 +148,8 @@ const App: React.FC = () => {
           <Stack.Screen name="ID" component={InvestmentDetail} options={{ headerShown: false }} />
           <Stack.Screen name="AccountDetails" component={AccountDetails} options={{ headerShown: false }} />
           <Stack.Screen name="IdentityVerification" component={IdentityVerification} options={{ headerShown: false }} />
+          <Stack.Screen name="KYCDetails" component={IdentityVerification1} options={{ headerShown: false }} />
+          <Stack.Screen name="PANVerification" component={PANVerification} options={{ headerShown: false }} />
           <Stack.Screen name="PaymentMethods" component={PaymentMethods} options={{ headerShown: false }} />
           <Stack.Screen name="SetupAutopay" component={SetupAutopay} options={{ headerShown: false }} />
           <Stack.Screen name="ProcessRedemption" component={ProcessRedemption} options={{ headerShown: false }} />

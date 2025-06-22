@@ -6,19 +6,35 @@ import {
   TouchableOpacity, 
   ScrollView,
   Dimensions,
-  StatusBar
+  StatusBar,
+  Alert
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import { COLORS, PROFILE_COLORS, SHADOWS, PROFILE_STYLES } from '../../components/ProfileComponents/theme';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { getUserKYCStatus, getUserKYCStatusFromFirebase, UserKYCStatus } from '../../utils/kycService';
 
 const { width } = Dimensions.get('window');
 
+interface RouteParams {
+  uid?: string;
+}
+
 const IdentityVerification: React.FC = () => {
   const navigation = useNavigation();
+  const route = useRoute();
+  const params = route.params as RouteParams | undefined;
+  const uid = params?.uid || 'default_user';
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
   const [showActions, setShowActions] = useState<boolean>(true);
+  const [kycStatus, setKycStatus] = useState<UserKYCStatus | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Check KYC status on component mount
+  useEffect(() => {
+    checkKYCStatus();
+  }, []);
   
   // Reset show actions when method changes
   useEffect(() => {
@@ -26,11 +42,64 @@ const IdentityVerification: React.FC = () => {
       setShowActions(true);
     }
   }, [selectedMethod]);
+
+  const checkKYCStatus = async () => {
+    try {
+      console.log('🔍 Checking KYC status in Identity Verification for user:', uid);
+      
+      // Always check Firebase first for the most up-to-date status
+      let status: UserKYCStatus;
+      try {
+        console.log('🔥 Checking Firebase for latest KYC status...');
+        status = await getUserKYCStatusFromFirebase(uid);
+        console.log('✅ Firebase KYC status:', status);
+      } catch (firebaseError) {
+        console.log('❌ Firebase failed, using fallback:', firebaseError);
+        status = await getUserKYCStatus(uid);
+        console.log('💾 Fallback KYC status:', status);
+      }
+      
+      setKycStatus(status);
+      
+      // Don't automatically navigate - let user see the verification methods
+      // Navigation will happen when they select PAN and click Continue
+    } catch (error) {
+      console.error('Error checking KYC status:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleContinue = () => {
+    if (!selectedMethod) return;
+
+    if (selectedMethod === 'pan') {
+      // Check if KYC is already verified
+      if (kycStatus?.isVerified) {
+        // Navigate to KYC Details screen to show verified information
+        (navigation as any).navigate('KYCDetails', { uid });
+      } else {
+        // Navigate to PAN verification screen for new verification
+        (navigation as any).navigate('PANVerification', {
+          userId: uid, // Use actual user ID
+          requiredForPurchase: false
+        });
+      }
+    } else if (selectedMethod === 'aadhaar') {
+      // Show coming soon alert for Aadhaar
+      Alert.alert(
+        'Coming Soon',
+        'Aadhaar verification will be available in the next update. Please use PAN verification for now.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
   
   StatusBar.setBarStyle('light-content');
 
   const renderMethod = (title: string, description: string, iconName: string, id: string) => {
     const isSelected = selectedMethod === id;
+    const isVerified = id === 'pan' && kycStatus?.isVerified;
     
     return (
       <TouchableOpacity
@@ -52,12 +121,20 @@ const IdentityVerification: React.FC = () => {
           </View>
           <View style={styles.methodContent}>
             <Text style={styles.methodTitle}>{title}</Text>
-            <Text style={styles.methodDescription}>{description}</Text>
+            <Text style={styles.methodDescription}>
+              {isVerified ? 'Already verified - View details' : description}
+            </Text>
           </View>
           <View style={styles.checkContainer}>
-            <View style={[styles.checkCircle, isSelected && styles.selectedCheckCircle]}>
-              {isSelected && <Icon name="check" size={16} color={COLORS.text} />}
-            </View>
+            {isVerified ? (
+              <View style={styles.verifiedBadge}>
+                <Icon name="check-circle" size={20} color={COLORS.success} />
+              </View>
+            ) : (
+              <View style={[styles.checkCircle, isSelected && styles.selectedCheckCircle]}>
+                {isSelected && <Icon name="check" size={16} color={COLORS.text} />}
+              </View>
+            )}
           </View>
         </LinearGradient>
       </TouchableOpacity>
@@ -134,6 +211,7 @@ const IdentityVerification: React.FC = () => {
               disabled={!selectedMethod}
               activeOpacity={0.8}
               style={[styles.continueButton, !selectedMethod && styles.disabledButton]}
+              onPress={handleContinue}
             >
               <LinearGradient
                 colors={selectedMethod ? COLORS.purpleGradient : ['#333', '#222']}
@@ -142,7 +220,7 @@ const IdentityVerification: React.FC = () => {
                 style={styles.continueGradient}
               >
                 <Text style={styles.continueText}>
-                  Continue
+                  {selectedMethod === 'pan' && kycStatus?.isVerified ? 'View Details' : 'Continue'}
                 </Text>
                 {selectedMethod && (
                   <Icon name="arrow-right" size={20} color={COLORS.text} />
@@ -190,10 +268,9 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(10, 10, 10, 0.5)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
-    ...SHADOWS.small,
   },
   scrollView: {
     flex: 1,
@@ -207,13 +284,13 @@ const styles = StyleSheet.create({
   },
   heroSection: {
     marginBottom: 24,
-    borderRadius: 20,
-    overflow: 'hidden',
-    ...SHADOWS.medium,
+    alignItems: 'center',
   },
   heroGradient: {
-    padding: 24,
+    padding: 16,
     alignItems: 'center',
+    width: '100%',
+    borderRadius: 16,
   },
   heroTitle: {
     fontSize: 28,
@@ -227,50 +304,58 @@ const styles = StyleSheet.create({
     color: COLORS.textDim,
     textAlign: 'center',
     marginBottom: 16,
+    lineHeight: 24,
   },
   securityBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(35, 21, 55, 0.6)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 30,
+    backgroundColor: 'rgba(166, 139, 215, 0.15)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
     marginTop: 8,
   },
   securityText: {
     color: COLORS.primary,
     fontSize: 13,
     marginLeft: 6,
+    fontWeight: '500',
   },
   infoSection: {
-    marginBottom: 28,
+    backgroundColor: COLORS.cardDark,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    ...SHADOWS.small,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '600',
     color: COLORS.text,
-    marginBottom: 12,
+    marginBottom: 16,
   },
   infoText: {
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 20,
     color: COLORS.textDim,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   methodsContainer: {
-    marginTop: 8,
+    marginTop: 0,
   },
   verificationMethod: {
-    borderRadius: 16,
-    marginBottom: 16,
-    overflow: 'hidden',
+    marginBottom: 12,
+    backgroundColor: COLORS.cardLight,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(106, 78, 156, 0.3)',
-    ...SHADOWS.small,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   selectedMethod: {
     borderColor: COLORS.primary,
-    ...SHADOWS.medium,
+    backgroundColor: 'rgba(166, 139, 215, 0.1)',
+    borderWidth: 2,
   },
   methodGradient: {
     flexDirection: 'row',
@@ -278,19 +363,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   methodIcon: {
-    width: 50,
-    height: 50,
-    backgroundColor: 'rgba(35, 21, 55, 0.5)',
-    borderRadius: 25,
+    width: 40,
+    height: 40,
+    backgroundColor: 'rgba(166, 139, 215, 0.15)',
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: 12,
   },
   methodContent: {
     flex: 1,
   },
   methodTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '600',
     color: COLORS.text,
     marginBottom: 4,
@@ -298,6 +383,7 @@ const styles = StyleSheet.create({
   methodDescription: {
     fontSize: 13,
     color: COLORS.textDim,
+    lineHeight: 18,
   },
   checkContainer: {
     marginLeft: 10,
@@ -306,8 +392,8 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.textMuted,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -315,54 +401,55 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
   },
+  verifiedBadge: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   bottomAction: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    backgroundColor: COLORS.background,
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 30,
+    paddingBottom: 24,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.05)',
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
   },
   buttonContainer: {
-    alignItems: 'center',
-    width: '100%',
+    gap: 8,
   },
   continueButton: {
     borderRadius: 12,
     overflow: 'hidden',
-    width: '100%',
-    maxWidth: 320,
-    ...SHADOWS.medium,
   },
   disabledButton: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
   continueGradient: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    gap: 6,
   },
   continueText: {
     color: COLORS.text,
     fontSize: 16,
     fontWeight: '600',
-    marginRight: 8,
   },
   skipButton: {
+    paddingVertical: 12,
     alignItems: 'center',
-    padding: 12,
-    marginTop: 8,
-    width: '100%',
-    maxWidth: 320,
   },
   skipText: {
     color: COLORS.textMuted,
     fontSize: 14,
+    fontWeight: '500',
   },
 });
 

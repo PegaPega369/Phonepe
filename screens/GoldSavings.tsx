@@ -1,4 +1,4 @@
-import React, {useState, useRef, useEffect} from 'react';
+import React, {useState, useRef, useEffect, useCallback} from 'react';
 import {
   View,
   Text,
@@ -11,14 +11,17 @@ import {
   Animated,
   StatusBar,
   PanResponder,
+  Alert,
 } from 'react-native';
-import {useNavigation, useRoute} from '@react-navigation/native';
+import {useNavigation, useRoute, useFocusEffect} from '@react-navigation/native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {LineChart} from 'react-native-chart-kit';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { canUserPurchase, getUserKYCStatus, getUserKYCStatusFromFirebase, UserKYCStatus } from '../utils/kycService';
+import { isKYCRequired, getKYCStatusMessage } from '../utils/kycChecker';
 
 const {width, height} = Dimensions.get('window');
 
@@ -78,6 +81,12 @@ const GoldSavings: React.FC = () => {
   const [gramsEquivalent, setGramsEquivalent] = useState('0.00');
   const [selectedTab, setSelectedTab] = useState('invest');
   const scrollY = useRef(new Animated.Value(0)).current;
+  
+  // KYC related state
+  const [kycStatus, setKycStatus] = useState<UserKYCStatus | null>(null);
+  const [canPurchase, setCanPurchase] = useState(true);
+  const [kycMessage, setKycMessage] = useState('');
+  const [isCheckingKyc, setIsCheckingKyc] = useState(false);
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -94,11 +103,116 @@ const GoldSavings: React.FC = () => {
   const handleAmountChange = (value: string) => {
     setAmount(value);
     calculateGrams(value);
+    checkPurchaseEligibility(parseFloat(value) || 0);
   };
 
   const handleQuickAmountSelect = (value: number) => {
     setAmount(value.toString());
     calculateGrams(value.toString());
+    checkPurchaseEligibility(value);
+  };
+
+  // Check if user can purchase the given amount
+  const checkPurchaseEligibility = async (purchaseAmount: number) => {
+    if (purchaseAmount <= 0) {
+      setCanPurchase(true);
+      setKycMessage('');
+      return;
+    }
+
+    setIsCheckingKyc(true);
+    try {
+      const result = await canUserPurchase(uid, purchaseAmount);
+      setCanPurchase(result.canPurchase);
+      
+      if (!result.canPurchase) {
+        setKycMessage(result.message);
+      } else {
+        setKycMessage('');
+      }
+    } catch (error) {
+      console.error('Error checking purchase eligibility:', error);
+      setCanPurchase(false);
+      setKycMessage('Unable to verify purchase eligibility');
+    } finally {
+      setIsCheckingKyc(false);
+    }
+  };
+
+  // Load KYC status on component mount and focus
+  const loadKYCStatus = useCallback(async () => {
+    try {
+      const status = await getUserKYCStatus(uid);
+      setKycStatus(status);
+      
+      // Also check current amount for purchase eligibility
+      if (amount && parseFloat(amount) > 0) {
+        checkPurchaseEligibility(parseFloat(amount));
+      }
+    } catch (error) {
+      console.error('Error loading KYC status:', error);
+    }
+  }, [uid]);
+
+  // Handle buy button press
+  const handleBuyGold = async () => {
+    const purchaseAmount = parseFloat(amount) || 0;
+    
+    if (purchaseAmount <= 0) {
+      Alert.alert('Invalid Amount', 'Please enter a valid amount to purchase gold.');
+      return;
+    }
+
+    // Check purchase eligibility
+    const result = await canUserPurchase(uid, purchaseAmount);
+    
+    if (!result.canPurchase) {
+      if (result.requiresKYC) {
+        Alert.alert(
+          'KYC Required',
+          result.message,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Complete KYC', 
+              onPress: () => navigateToKYC(purchaseAmount) 
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Purchase Limit Exceeded', result.message);
+      }
+      return;
+    }
+
+    // Proceed with gold purchase
+    proceedWithGoldPurchase(purchaseAmount);
+  };
+
+  const navigateToKYC = (purchaseAmount: number) => {
+    (navigation as any).navigate('PANVerification', {
+      userId: uid,
+      requiredForPurchase: true,
+      purchaseAmount: purchaseAmount
+    });
+  };
+
+  const proceedWithGoldPurchase = (purchaseAmount: number) => {
+    // Here you would integrate with your existing gold purchase flow
+    // For now, showing a success message
+    Alert.alert(
+      'Purchase Initiated',
+      `Proceeding to purchase ₹${purchaseAmount} worth of digital gold (${gramsEquivalent} grams).\n\nThis will redirect to payment gateway.`,
+      [
+        { 
+          text: 'Continue', 
+          onPress: () => {
+            // Navigate to payment or existing purchase flow
+            console.log('Proceeding with gold purchase:', purchaseAmount);
+          }
+        }
+      ]
+    );
   };
 
   useEffect(() => {
@@ -116,6 +230,13 @@ const GoldSavings: React.FC = () => {
       }),
     ]).start();
   }, []);
+
+  // Load KYC status when screen is focused (including first load and when returning from KYC screen)
+  useFocusEffect(
+    useCallback(() => {
+      loadKYCStatus();
+    }, [loadKYCStatus])
+  );
 
   const headerOpacity = scrollY.interpolate({
     inputRange: [0, 100],
@@ -283,8 +404,13 @@ const GoldSavings: React.FC = () => {
           <Icon name="arrow-left" size={24} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={styles.headerText}>Gold Investment</Text>
-        <TouchableOpacity style={styles.menuButton}>
-          <MaterialIcons name="more-vert" size={24} color="#FFFFFF" />
+        <TouchableOpacity 
+          style={styles.menuButton}
+          onPress={() => {
+            console.log('🔄 Manual KYC refresh triggered');
+            loadKYCStatus();
+          }}>
+          <MaterialIcons name="refresh" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
 
@@ -397,6 +523,42 @@ const GoldSavings: React.FC = () => {
                 ≈ {gramsEquivalent} grams of digital gold
               </Text>
 
+              {/* KYC Status and Purchase Warning */}
+              {amount && parseFloat(amount) > 0 && (
+                <View style={styles.kycStatusContainer}>
+                  {kycStatus?.isVerified ? (
+                    <View style={styles.kycVerifiedContainer}>
+                      <Icon name="shield-check" size={16} color="#4CAF50" />
+                      <Text style={styles.kycVerifiedText}>
+                        KYC Verified ✅ - Unlimited purchases
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.kycWarningContainer}>
+                      {isKYCRequired(parseFloat(amount)) ? (
+                        <>
+                          <Icon name="alert-circle" size={16} color="#FF9800" />
+                          <Text style={styles.kycWarningText}>
+                            ⚠️ KYC Required for purchases above ₹1000
+                          </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Icon name="information" size={16} color="#2196F3" />
+                          <Text style={styles.kycInfoText}>
+                            ℹ️ No KYC required (below ₹1000)
+                          </Text>
+                        </>
+                      )}
+                    </View>
+                  )}
+                  
+                  {kycMessage && !canPurchase && (
+                    <Text style={styles.kycErrorText}>{kycMessage}</Text>
+                  )}
+                </View>
+              )}
+
               <Text style={styles.quickSelectLabel}>Quick Select</Text>
               <View style={styles.quickSelectContainer}>
                 <View style={styles.quickSelectRow}>
@@ -507,19 +669,32 @@ const GoldSavings: React.FC = () => {
           end={{x: 1, y: 0}}
           style={styles.gradientButton}>
           <TouchableOpacity
-            style={styles.proceedButton}
+            style={[
+              styles.proceedButton,
+              (!amount || !canPurchase || isCheckingKyc) && selectedTab === 'invest' && styles.disabledButton
+            ]}
             activeOpacity={0.8}
-            disabled={!amount && selectedTab === 'invest'}>
-            <Text style={styles.proceedButtonText}>
-              {selectedTab === 'invest' ? 'Buy Now' : 'Start Investing'}
-            </Text>
-            {selectedTab === 'invest' && (
-              <Icon
-                name="arrow-right"
-                size={18}
-                color="#FFFFFF"
-                style={styles.buttonIcon}
-              />
+            disabled={(!amount || !canPurchase || isCheckingKyc) && selectedTab === 'invest'}
+            onPress={selectedTab === 'invest' ? handleBuyGold : () => setSelectedTab('invest')}>
+            {isCheckingKyc ? (
+              <Text style={styles.proceedButtonText}>Checking KYC...</Text>
+            ) : (
+              <>
+                <Text style={styles.proceedButtonText}>
+                  {selectedTab === 'invest' 
+                    ? (canPurchase ? 'Buy Now' : 'Complete KYC to Buy')
+                    : 'Start Investing'
+                  }
+                </Text>
+                {selectedTab === 'invest' && (
+                  <Icon
+                    name={canPurchase ? "arrow-right" : "shield-check"}
+                    size={18}
+                    color="#FFFFFF"
+                    style={styles.buttonIcon}
+                  />
+                )}
+              </>
             )}
           </TouchableOpacity>
         </LinearGradient>
@@ -916,6 +1091,57 @@ const styles = StyleSheet.create({
   buttonIcon: {
     marginLeft: 8,
   },
+  disabledButton: {
+    opacity: 0.6,
+  },
+  // KYC Status Styles
+  kycStatusContainer: {
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  kycVerifiedContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    padding: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.3)',
+  },
+  kycVerifiedText: {
+    color: '#4CAF50',
+    fontSize: 12,
+    marginLeft: 6,
+    fontWeight: '500',
+  },
+  kycWarningContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 152, 0, 0.1)',
+    padding: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 152, 0, 0.3)',
+  },
+  kycWarningText: {
+    color: '#FF9800',
+    fontSize: 12,
+    marginLeft: 6,
+    fontWeight: '500',
+  },
+  kycInfoText: {
+    color: '#2196F3',
+    fontSize: 12,
+    marginLeft: 6,
+    fontWeight: '500',
+  },
+  kycErrorText: {
+    color: '#F44336',
+    fontSize: 12,
+    marginTop: 6,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
   chartTouchArea: {
     height: CHART_HEIGHT,
     width: '100%',
@@ -945,6 +1171,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '600',
     fontSize: 12,
+  },
+  debugText: {
+    color: '#FF0000',
+    fontSize: 10,
+    marginBottom: 5,
+    textAlign: 'center',
   },
 });
 
