@@ -29,6 +29,38 @@ const KYCDetailsScreen: React.FC = ({ route }: any) => {
   const [showFullPAN, setShowFullPAN] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // Early return if no user ID is provided
+  if (!uid) {
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+        
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+            <Icon name="arrow-left" size={24} color={COLORS.text} />
+          </TouchableOpacity>
+          <LinearGradient
+            colors={COLORS.purpleGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.headerGradient}
+          >
+            <Text style={styles.headerText}>KYC Details</Text>
+          </LinearGradient>
+        </View>
+
+        <View style={styles.emptyContainer}>
+          <Icon name="account-alert" size={64} color={COLORS.textMuted} />
+          <Text style={styles.emptyTitle}>Authentication Required</Text>
+          <Text style={styles.emptySubtitle}>
+            User authentication is required to view KYC details. Please log in again.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   useEffect(() => {
     loadKYCDetails();
   }, []);
@@ -36,7 +68,7 @@ const KYCDetailsScreen: React.FC = ({ route }: any) => {
   const loadKYCDetails = async () => {
     try {
       setLoading(true);
-      const status = await getUserKYCStatus(uid || 'default_user');
+      const status = await getUserKYCStatus(uid);
       setKycStatus(status);
     } catch (error) {
       console.error('Error loading KYC details:', error);

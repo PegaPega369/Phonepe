@@ -109,14 +109,25 @@ export const checkKYCRequirement = (purchaseAmount: number): boolean => {
  */
 export const getUserKYCStatus = async (userId: string): Promise<UserKYCStatus> => {
   try {
+    console.log('🔍 getUserKYCStatus called with userId:', userId);
+    
     const userDoc = await firestore().collection('users').doc(userId).get();
+    console.log('📄 User document exists:', userDoc.exists);
     
     if (userDoc.exists) {
       const userData = userDoc.data();
+      console.log('📋 User data structure:', Object.keys(userData || {}));
+      console.log('🔍 KYC data found:', userData?.kycStatus ? 'YES' : 'NO');
+      
       const kycData = userData?.kycStatus;
       
       if (kycData && kycData.isVerified) {
         console.log('✅ KYC verified user found');
+        console.log('📋 KYC details:', {
+          panNumber: kycData.panNumber,
+          verifiedName: kycData.verifiedName,
+          verificationDate: kycData.verificationDate
+        });
         return {
           isVerified: true,
           panNumber: kycData.panNumber,
@@ -125,7 +136,14 @@ export const getUserKYCStatus = async (userId: string): Promise<UserKYCStatus> =
           canBuyGold: true,
           maxPurchaseLimit: Infinity
         };
+      } else {
+        console.log('⚠️ User document exists but KYC not verified or missing');
+        if (kycData) {
+          console.log('📋 Existing KYC data:', kycData);
+        }
       }
+    } else {
+      console.log('❌ User document does not exist for userId:', userId);
     }
 
     // Return default status for new/unverified users
@@ -155,12 +173,20 @@ export const saveUserKYCStatus = async (
   kycStatus: Partial<UserKYCStatus>
 ): Promise<boolean> => {
   try {
+    console.log('💾 saveUserKYCStatus called');
+    console.log('👤 User ID:', userId);
+    console.log('📋 KYC status to save:', kycStatus);
+
     const currentStatus = await getUserKYCStatus(userId);
+    console.log('📋 Current status before update:', currentStatus);
+    
     const updatedStatus = {
       ...currentStatus,
       ...kycStatus,
       verificationDate: kycStatus.isVerified ? new Date().toISOString() : currentStatus.verificationDate
     };
+
+    console.log('📋 Final status to save:', updatedStatus);
 
     // Save to Firebase ONLY
     await firestore().collection('users').doc(userId).set({
@@ -168,12 +194,72 @@ export const saveUserKYCStatus = async (
       lastUpdated: firestore.FieldValue.serverTimestamp()
     }, { merge: true });
 
-    console.log('✅ KYC saved to Firebase');
+    console.log('✅ KYC saved to Firebase successfully');
     return true;
 
   } catch (error) {
     console.error('❌ KYC save failed:', error);
     return false;
+  }
+};
+
+/**
+ * Check if PAN number is already used by another user
+ */
+export const checkPANUniqueness = async (
+  panNumber: string,
+  currentUserId: string
+): Promise<{
+  isUnique: boolean;
+  existingUserId?: string;
+  existingUserName?: string;
+}> => {
+  try {
+    console.log('🔍 Checking PAN uniqueness for:', panNumber);
+    console.log('👤 Current user ID:', currentUserId);
+
+    const formattedPAN = panNumber.toUpperCase().trim();
+    
+    // Query all users with KYC data
+    const usersSnapshot = await firestore()
+      .collection('users')
+      .where('kycStatus.isVerified', '==', true)
+      .where('kycStatus.panNumber', '==', formattedPAN)
+      .get();
+
+    console.log('📊 Found', usersSnapshot.size, 'verified users with this PAN');
+
+    if (usersSnapshot.empty) {
+      console.log('✅ PAN is unique - no other users found');
+      return { isUnique: true };
+    }
+
+    // Check if any existing user is different from current user
+    for (const doc of usersSnapshot.docs) {
+      const userId = doc.id;
+      const userData = doc.data();
+      
+      console.log('🔍 Found existing user:', userId);
+      console.log('📋 User data:', userData.kycStatus);
+      
+      if (userId !== currentUserId) {
+        console.log('❌ PAN already used by different user:', userId);
+        return {
+          isUnique: false,
+          existingUserId: userId,
+          existingUserName: userData.kycStatus?.verifiedName || userData.name || 'Unknown'
+        };
+      }
+    }
+
+    // PAN is used by current user only
+    console.log('✅ PAN is used by current user only');
+    return { isUnique: true };
+
+  } catch (error) {
+    console.error('❌ Error checking PAN uniqueness:', error);
+    // On error, assume PAN is not unique for safety
+    return { isUnique: false };
   }
 };
 
@@ -190,10 +276,31 @@ export const completeKYCVerification = async (
   kycStatus?: UserKYCStatus;
 }> => {
   try {
-    // Step 1: Validate PAN
+    console.log('🚀 Starting KYC verification process');
+    console.log('👤 User ID:', userId);
+    console.log('🆔 PAN Number:', panNumber);
+    console.log('📝 Holder Name:', holderName);
+
+    // Step 1: Check PAN uniqueness
+    console.log('🔍 Step 1: Checking PAN uniqueness...');
+    const uniquenessCheck = await checkPANUniqueness(panNumber, userId);
+    
+    if (!uniquenessCheck.isUnique) {
+      console.log('❌ PAN already used by another user:', uniquenessCheck.existingUserId);
+      return {
+        success: false,
+        message: `This PAN number is already verified by another user (${uniquenessCheck.existingUserName}). Each PAN can only be used once for KYC verification.`
+      };
+    }
+
+    console.log('✅ PAN uniqueness check passed');
+
+    // Step 2: Validate PAN
+    console.log('📡 Step 2: Validating PAN with API...');
     const validation = await validatePAN(panNumber, holderName);
     
     if (!validation.success) {
+      console.log('❌ PAN validation failed:', validation.error);
       return {
         success: false,
         message: validation.error || 'PAN validation failed'
@@ -201,34 +308,54 @@ export const completeKYCVerification = async (
     }
 
     const kycResponse = validation.data!;
+    console.log('📋 Full API Response:', kycResponse);
+    console.log('📋 API Response Summary:', {
+      result_code: kycResponse.result_code,
+      status: kycResponse.result?.status,
+      message: kycResponse.message,
+      result_exists: !!kycResponse.result
+    });
     
-    // Check if PAN is valid
-    if (kycResponse.result_code !== 101 || kycResponse.result?.status !== 'VALID') {
+    // Check if PAN is valid - handle both nested and flat response structures
+    const status = kycResponse.result?.status || (kycResponse as any).status;
+    const resultName = kycResponse.result?.name || (kycResponse as any).name;
+    
+    if (kycResponse.result_code !== 101 || status !== 'Active') {
+      console.log('❌ PAN validation response indicates invalid PAN');
+      console.log('🔍 Expected: result_code=101 and status="Active"');
+      console.log('🔍 Received: result_code=' + kycResponse.result_code + ' and status="' + status + '"');
       return {
         success: false,
         message: kycResponse.message || 'Invalid PAN number'
       };
     }
 
-    // Step 2: Save verified KYC status
+    console.log('✅ PAN validation successful');
+    console.log('📝 Verified name from API:', resultName);
+
+    // Step 3: Save verified KYC status
+    console.log('💾 Step 3: Saving KYC status to Firebase...');
     const kycStatus: UserKYCStatus = {
       isVerified: true,
       panNumber: panNumber.toUpperCase(),
-      verifiedName: kycResponse.result.name,
+      verifiedName: resultName || holderName || 'Unknown',
       verificationDate: new Date().toISOString(),
       canBuyGold: true,
       maxPurchaseLimit: Infinity
     };
 
+    console.log('📋 KYC status to save:', kycStatus);
     const saved = await saveUserKYCStatus(userId, kycStatus);
     
     if (!saved) {
+      console.log('❌ Failed to save KYC status to Firebase');
       return {
         success: false,
         message: 'Failed to save KYC status'
       };
     }
 
+    console.log('✅ KYC verification completed successfully');
     return {
       success: true,
       message: 'KYC verification completed successfully',
@@ -236,6 +363,7 @@ export const completeKYCVerification = async (
     };
 
   } catch (error: any) {
+    console.error('❌ KYC verification process failed:', error);
     return {
       success: false,
       message: error.message || 'KYC verification failed'

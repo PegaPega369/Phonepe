@@ -58,6 +58,8 @@ import SaveScreen from './screens/SaveScreen';
 import WithdrawScreen from './screens/WithdrawScreen';
 import GoalDetailScreen from './screens/GoalDetailsScreen';
 import AddContribution from './screens/AddContribution';
+import OnboardingScreen from './screens/OnboardingScreen';
+import UserDetailsScreen from './screens/UserDetailsScreen';
 
 
 
@@ -111,6 +113,8 @@ const App: React.FC = () => {
       <NavigationContainer independent={true}>
         <Stack.Navigator initialRouteName={isLoggedIn ? "Home" : "Login"}>
           <Stack.Screen name="Login" component={LoginPage} options={{ headerShown: false }} />
+          <Stack.Screen name="OnboardingScreen" component={OnboardingScreen} options={{ headerShown: false }} />
+          <Stack.Screen name="UserDetailsScreen" component={UserDetailsScreen} options={{ headerShown: false }} />
           <Stack.Screen name="MobileVerification" component={MobileVerification} options={{ headerShown: false }} />
           <Stack.Screen name="SmsReq" component={SmsReq} options={{ headerShown: false }} />
           <Stack.Screen name="DetailsPg" component={Details} options={{ headerShown: false }} />

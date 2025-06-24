@@ -76,6 +76,17 @@ const GoldSavings: React.FC = () => {
   const route = useRoute();
   const {uid} = route.params as RouteParams;
 
+  // Debug logging for user ID
+  useEffect(() => {
+    console.log('🏆 GoldSavings Screen Debug Info:');
+    console.log('📋 Route params:', route.params);
+    console.log('👤 User ID (uid):', uid);
+    
+    if (!uid || uid === 'default_user') {
+      console.log('⚠️ WARNING: GoldSavings has no valid user ID!');
+    }
+  }, [uid]);
+
   const [timeframe, setTimeframe] = useState('day');
   const [amount, setAmount] = useState('');
   const [gramsEquivalent, setGramsEquivalent] = useState('0.00');
@@ -190,6 +201,10 @@ const GoldSavings: React.FC = () => {
   };
 
   const navigateToKYC = (purchaseAmount: number) => {
+    console.log('🔄 Navigating to KYC verification');
+    console.log('👤 User ID being passed:', uid);
+    console.log('💰 Purchase amount:', purchaseAmount);
+    
     (navigation as any).navigate('PANVerification', {
       userId: uid,
       requiredForPurchase: true,
@@ -680,19 +695,19 @@ const GoldSavings: React.FC = () => {
               <Text style={styles.proceedButtonText}>Checking KYC...</Text>
             ) : (
               <>
-                <Text style={styles.proceedButtonText}>
+            <Text style={styles.proceedButtonText}>
                   {selectedTab === 'invest' 
                     ? (canPurchase ? 'Buy Now' : 'Complete KYC to Buy')
                     : 'Start Investing'
                   }
-                </Text>
-                {selectedTab === 'invest' && (
-                  <Icon
+            </Text>
+            {selectedTab === 'invest' && (
+              <Icon
                     name={canPurchase ? "arrow-right" : "shield-check"}
-                    size={18}
-                    color="#FFFFFF"
-                    style={styles.buttonIcon}
-                  />
+                size={18}
+                color="#FFFFFF"
+                style={styles.buttonIcon}
+              />
                 )}
               </>
             )}

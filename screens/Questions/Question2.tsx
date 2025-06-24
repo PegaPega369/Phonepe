@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { CheckBox } from 'react-native-elements';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -12,10 +12,10 @@ const Question2: React.FC = () => {
   const { uid } = route.params as { uid: string };
 
   const options = [
-    { id: 1, text: '10', label: 'nearest 10' },
-    { id: 2, text: '20', label: 'nearest 20' },
-    { id: 3, text: '30', label: 'nearest 30' },
-    { id: 4, text: '50', label: 'nearest 50' },
+    { id: 1, text: '10', label: 'Nearest ₹10', description: 'Round up to the nearest 10 rupees' },
+    { id: 2, text: '20', label: 'Nearest ₹20', description: 'Round up to the nearest 20 rupees' },
+    { id: 3, text: '30', label: 'Nearest ₹30', description: 'Round up to the nearest 30 rupees' },
+    { id: 4, text: '50', label: 'Nearest ₹50', description: 'Round up to the nearest 50 rupees' },
   ];
 
   const progress = 100;
@@ -25,11 +25,20 @@ const Question2: React.FC = () => {
   };
 
   const saveDetails = async () => {
+    if (!roundTo) {
+      Alert.alert('Please select an option', 'Choose a round-up amount before continuing.');
+      return;
+    }
+
     try {
+      // Update the user document with round-up preference
       await firestore().collection('users').doc(uid).update({ roundTo });
+      
+      // Navigate to UPI setup
       navigation.navigate('UPI', { uid });
     } catch (error) {
-      console.log(error);
+      console.error('Error saving round-up preference:', error);
+      Alert.alert('Error', 'Failed to save your preference. Please try again.');
     }
   };
 
@@ -40,7 +49,7 @@ const Question2: React.FC = () => {
         <View style={styles.progressBar}>
           <View style={{ width: `${progress}%`, ...styles.progress }} />
         </View>
-        <Text style={styles.progressText}>Question 2/2</Text>
+        <Text style={styles.progressText}>Step 3 of 4</Text>
         <Text style={styles.question}>How would you like to round off to?</Text>
 
         {options.map(option => (
@@ -58,20 +67,42 @@ const Question2: React.FC = () => {
               ]}
               onPress={() => handleOptionPress(option.text)}
             >
-              <Text
-                style={[
-                  styles.optionText,
-                  roundTo === option.text && styles.optionTextSelected,
-                ]}
-              >
-                {option.label}
-              </Text>
+              <View>
+                <Text
+                  style={[
+                    styles.optionText,
+                    roundTo === option.text && styles.optionTextSelected,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+                <Text
+                  style={[
+                    styles.optionDescription,
+                    roundTo === option.text && styles.optionDescriptionSelected,
+                  ]}
+                >
+                  {option.description}
+                </Text>
+              </View>
             </TouchableOpacity>
           </View>
         ))}
 
-        <TouchableOpacity style={styles.button} onPress={saveDetails}>
-          <Text style={styles.nextText}>Next</Text>
+        <TouchableOpacity 
+          style={[
+            styles.button,
+            !roundTo && styles.buttonDisabled
+          ]} 
+          onPress={saveDetails}
+          disabled={!roundTo}
+        >
+          <Text style={[
+            styles.nextText,
+            !roundTo && styles.nextTextDisabled
+          ]}>
+            {roundTo ? 'Next' : 'Select an option'}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -151,6 +182,14 @@ const styles = StyleSheet.create({
     color: '#9D6DF9',
     fontWeight: '600',
   },
+  optionDescription: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.6)',
+    marginTop: 4,
+  },
+  optionDescriptionSelected: {
+    color: 'rgba(157, 109, 249, 0.8)',
+  },
   button: {
     width: '100%',
     backgroundColor: '#4B0082',
@@ -160,10 +199,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 30,
   },
+  buttonDisabled: {
+    backgroundColor: 'rgba(75, 75, 75, 0.5)',
+  },
   nextText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  nextTextDisabled: {
+    color: 'rgba(255, 255, 255, 0.5)',
   },
 });
 

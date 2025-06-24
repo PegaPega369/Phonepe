@@ -12,7 +12,7 @@ import {
   Platform
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { completeKYCVerification, getUserKYCStatus, UserKYCStatus } from '../../utils/kycService';
+import { completeKYCVerification, getUserKYCStatus, UserKYCStatus, checkPANUniqueness } from '../../utils/kycService';
 import { validateKYCForm, formatPAN, formatName } from '../../utils/kycChecker';
 
 interface PANVerificationProps {
@@ -33,17 +33,36 @@ const PANVerification: React.FC<PANVerificationProps> = ({ route }) => {
   const [isCheckingStatus, setIsCheckingStatus] = useState(true);
   const [currentKYCStatus, setCurrentKYCStatus] = useState<UserKYCStatus | null>(null);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [panWarning, setPanWarning] = useState<string>('');
 
   // Get parameters
-  const userId = route?.params?.userId || 'default_user';
+  const userId = route?.params?.userId;
   const requiredForPurchase = route?.params?.requiredForPurchase || false;
   const purchaseAmount = route?.params?.purchaseAmount || 0;
+
+  // Debug logging to track user ID issues
+  useEffect(() => {
+    console.log('🔍 PANVerification Debug Info:');
+    console.log('📋 Route params:', route?.params);
+    console.log('👤 User ID from params:', route?.params?.userId);
+    console.log('🆔 Final userId being used:', userId);
+    console.log('💰 Purchase amount:', purchaseAmount);
+    console.log('🛒 Required for purchase:', requiredForPurchase);
+    
+    if (!userId) {
+      console.log('❌ ERROR: No user ID provided to PANVerification!');
+    } else if (userId === 'default_user') {
+      console.log('⚠️ WARNING: Using fallback default_user ID - this might cause KYC verification to fail!');
+    }
+  }, []);
 
   useEffect(() => {
     checkCurrentKYCStatus();
   }, []);
 
   const checkCurrentKYCStatus = async () => {
+    if (!userId) return; // Skip if no user ID
+    
     try {
       const status = await getUserKYCStatus(userId);
       setCurrentKYCStatus(status);
@@ -56,6 +75,26 @@ const PANVerification: React.FC<PANVerificationProps> = ({ route }) => {
     }
   };
 
+  // Debounced PAN uniqueness checker
+  const checkPANUniquenessDebounced = async (pan: string) => {
+    if (!userId || pan.length !== 10) {
+      setPanWarning('');
+      return;
+    }
+
+    try {
+      const uniquenessResult = await checkPANUniqueness(pan, userId);
+      if (!uniquenessResult.isUnique) {
+        setPanWarning(`⚠️ This PAN is already verified by ${uniquenessResult.existingUserName}`);
+      } else {
+        setPanWarning('');
+      }
+    } catch (error) {
+      console.error('Error checking PAN uniqueness:', error);
+      setPanWarning('');
+    }
+  };
+
   const handlePANChange = (text: string) => {
     const formatted = formatPAN(text);
     setPanNumber(formatted);
@@ -63,6 +102,14 @@ const PANVerification: React.FC<PANVerificationProps> = ({ route }) => {
     // Clear PAN error when user starts typing
     if (errors.panNumber) {
       setErrors(prev => ({ ...prev, panNumber: '' }));
+    }
+
+    // Clear previous warning
+    setPanWarning('');
+
+    // Check PAN uniqueness with debounce
+    if (formatted.length === 10) {
+      setTimeout(() => checkPANUniquenessDebounced(formatted), 1000);
     }
   };
 
@@ -77,6 +124,16 @@ const PANVerification: React.FC<PANVerificationProps> = ({ route }) => {
   };
 
   const handleVerifyPAN = async () => {
+    // Check for PAN warning first
+    if (panWarning) {
+      Alert.alert(
+        'Duplicate PAN Detected',
+        'This PAN number is already verified by another user. Each PAN can only be used once for KYC verification.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     // Validate form
     const validation = validateKYCForm({
       panNumber,
@@ -92,6 +149,11 @@ const PANVerification: React.FC<PANVerificationProps> = ({ route }) => {
     setErrors({});
 
     try {
+      if (!userId) {
+        Alert.alert('Error', 'User authentication required. Please log in again.');
+        return;
+      }
+      
       const result = await completeKYCVerification(userId, panNumber, holderName);
 
       if (result.success) {
@@ -126,6 +188,26 @@ const PANVerification: React.FC<PANVerificationProps> = ({ route }) => {
       setIsLoading(false);
     }
   };
+
+  // Early return if no user ID is provided
+  if (!userId) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorTitle}>Authentication Required</Text>
+          <Text style={styles.errorMessage}>
+            User authentication is required to access KYC verification. Please log in again.
+          </Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.retryButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   if (isCheckingStatus) {
     return (
@@ -218,6 +300,9 @@ const PANVerification: React.FC<PANVerificationProps> = ({ route }) => {
             />
             {errors.panNumber && (
               <Text style={styles.errorText}>{errors.panNumber}</Text>
+            )}
+            {panWarning && (
+              <Text style={styles.warningText}>{panWarning}</Text>
             )}
             <Text style={styles.helperText}>
               Enter your 10-digit PAN number as printed on your PAN card
@@ -364,6 +449,12 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: '#F44336',
+    fontSize: 12,
+    marginTop: 8,
+    fontWeight: '500',
+  },
+  warningText: {
+    color: '#FF9800',
     fontSize: 12,
     marginTop: 8,
     fontWeight: '500',
@@ -515,6 +606,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   backButtonText: {
+    color: '#333',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 20,
+  },
+  errorMessage: {
+    color: '#E0E0E0',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#FFD700',
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  retryButtonText: {
     color: '#333',
     fontSize: 16,
     fontWeight: 'bold',

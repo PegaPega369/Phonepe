@@ -1,21 +1,21 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { CheckBox } from 'react-native-elements';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import firestore from '@react-native-firebase/firestore';
 
-const Question2: React.FC = () => {
+const Question3: React.FC = () => {
   const [manual, setmanual] = useState('');
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const route = useRoute();
   const { uid } = route.params as { uid: string };
 
   const options = [
-    { id: 1, text: '10' },
-    { id: 2, text: '20' },
-    { id: 3, text: '30' },
-    { id: 4, text: '50' },
+    { id: 1, text: '10', description: 'Small but steady daily savings' },
+    { id: 2, text: '20', description: 'Balanced approach to daily savings' },
+    { id: 3, text: '30', description: 'Moderate daily investment goal' },
+    { id: 4, text: '50', description: 'Ambitious daily savings target' },
   ];
 
   const progress = 100;
@@ -25,11 +25,20 @@ const Question2: React.FC = () => {
   };
 
   const saveDetails = async () => {
+    if (!manual) {
+      Alert.alert('Please select an option', 'Choose a daily savings amount before continuing.');
+      return;
+    }
+
     try {
+      // Update the user document with manual savings preference
       await firestore().collection('users').doc(uid).update({ manual });
+      
+      // Navigate to UPI setup
       navigation.navigate('UPI', { uid });
     } catch (error) {
-      console.log(error);
+      console.error('Error saving manual savings preference:', error);
+      Alert.alert('Error', 'Failed to save your preference. Please try again.');
     }
   };
 
@@ -40,7 +49,7 @@ const Question2: React.FC = () => {
         <View style={styles.progressBar}>
           <View style={{ width: `${progress}%`, ...styles.progress }} />
         </View>
-        <Text style={styles.progressText}>Question 2/2</Text>
+        <Text style={styles.progressText}>Step 4 of 4</Text>
         <Text style={styles.question}>How much would you like to save per day?</Text>
 
         {options.map(option => (
@@ -58,20 +67,42 @@ const Question2: React.FC = () => {
               ]}
               onPress={() => handleOptionPress(option.text)}
             >
-              <Text
-                style={[
-                  styles.optionText,
-                  manual === option.text && styles.optionTextSelected,
-                ]}
-              >
-                ₹ {option.text}
-              </Text>
+              <View>
+                <Text
+                  style={[
+                    styles.optionText,
+                    manual === option.text && styles.optionTextSelected,
+                  ]}
+                >
+                  ₹ {option.text}
+                </Text>
+                <Text
+                  style={[
+                    styles.optionDescription,
+                    manual === option.text && styles.optionDescriptionSelected,
+                  ]}
+                >
+                  {option.description}
+                </Text>
+              </View>
             </TouchableOpacity>
           </View>
         ))}
 
-        <TouchableOpacity style={styles.button} onPress={saveDetails}>
-          <Text style={styles.nextText}>Next</Text>
+        <TouchableOpacity 
+          style={[
+            styles.button,
+            !manual && styles.buttonDisabled
+          ]} 
+          onPress={saveDetails}
+          disabled={!manual}
+        >
+          <Text style={[
+            styles.nextText,
+            !manual && styles.nextTextDisabled
+          ]}>
+            {manual ? 'Next' : 'Select an option'}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -151,6 +182,14 @@ const styles = StyleSheet.create({
     color: '#9D6DF9',
     fontWeight: '600',
   },
+  optionDescription: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.6)',
+    marginTop: 4,
+  },
+  optionDescriptionSelected: {
+    color: 'rgba(157, 109, 249, 0.8)',
+  },
   button: {
     width: '100%',
     backgroundColor: '#4B0082',
@@ -160,11 +199,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 30,
   },
+  buttonDisabled: {
+    backgroundColor: 'rgba(75, 0, 130, 0.5)',
+  },
   nextText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
   },
+  nextTextDisabled: {
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
 });
 
-export default Question2;
+export default Question3;

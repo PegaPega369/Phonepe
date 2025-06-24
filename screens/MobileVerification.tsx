@@ -30,6 +30,7 @@ interface RootStackParamList {
   Login: undefined;
   Home: { uid: string };
   DetailsPg: { uid: string };
+  OnboardingScreen: { uid: string };
 }
 
 interface RouteParams {
@@ -203,13 +204,24 @@ const MobileVerification: React.FC = () => {
       
       if (userDoc.exists) {
         // Save user token for persistent login
-      await AsyncStorage.setItem('userToken', user.uid);
-      
-      // Navigate to home with user ID
-      navigation.replace('Home', { uid: user.uid });
+        await AsyncStorage.setItem('userToken', user.uid);
+        
+        // Navigate to home with user ID
+        navigation.replace('Home', { uid: user.uid });
         
       } else {
-        navigation.replace('DetailsPg', { uid: user.uid })
+        // For new users, create initial user document with phone number
+        await firestore().collection('users').doc(user.uid).set({
+          uid: user.uid,
+          phoneNumber: phoneNumber,
+          phone: phoneNumber,
+          createdAt: firestore.Timestamp.now(),
+          updatedAt: firestore.Timestamp.now(),
+          onboardingCompleted: false,
+        });
+        
+        // For new users, start with onboarding
+        navigation.replace('OnboardingScreen', { uid: user.uid });
       }
     } catch (error: any) {
       console.error('OTP verification error:', error);

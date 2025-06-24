@@ -25,11 +25,39 @@ const IdentityVerification: React.FC = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const params = route.params as RouteParams | undefined;
-  const uid = params?.uid || 'default_user';
+  const uid = params?.uid;
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
   const [showActions, setShowActions] = useState<boolean>(true);
   const [kycStatus, setKycStatus] = useState<UserKYCStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Early return if no user ID is provided
+  if (!uid) {
+    return (
+      <View style={styles.container}>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Icon name="arrow-left" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
+        
+        <View style={styles.errorContainer}>
+          <Icon name="account-alert" size={64} color="#FF6B6B" />
+          <Text style={styles.errorTitle}>Authentication Required</Text>
+          <Text style={styles.errorMessage}>
+            User authentication is required to access identity verification. Please log in again.
+          </Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.retryButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
   
   // Check KYC status on component mount
   useEffect(() => {
@@ -450,6 +478,35 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: 14,
     fontWeight: '500',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  errorTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FF6B6B',
+    marginBottom: 16,
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  retryButton: {
+    padding: 16,
+    backgroundColor: '#FF6B6B',
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

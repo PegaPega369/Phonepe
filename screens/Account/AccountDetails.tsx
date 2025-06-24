@@ -69,11 +69,11 @@ const AccountDetails: React.FC = () => {
         if (userDoc.exists) {
           const userData = userDoc.data() as Partial<UserData>;
           setFormData({
-            firstName: userData.firstName || '',
-            lastName: userData.lastName || '',
-            email: userData.gmail || '',
-            phone: userData.phone || '',
-            dateOfBirth: userData.dob || '',
+            firstName: userData.firstName || userData.name?.split(' ')[0] || '',
+            lastName: userData.lastName || userData.name?.split(' ').slice(1).join(' ') || '',
+            email: userData.gmail || userData.email || '',
+            phone: userData.phone || userData.phoneNumber || '',
+            dateOfBirth: userData.dob || userData.dateOfBirth || '',
             address: userData.address || '',
             pincode: userData.pincode || '',
           });
